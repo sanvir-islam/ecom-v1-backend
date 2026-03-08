@@ -1,12 +1,16 @@
 import { Schema, model, Document, Types } from "mongoose";
 
+export interface IVariantImage {
+  url: string;
+  publicId: string;
+}
+
 export interface IVariant {
   _id?: Types.ObjectId;
   sizeLabel: string;
   subtitle?: string;
   price: number;
-  imageUrl: string;
-  imagePublicId: string;
+  images: IVariantImage[];
   stock: number;
   stockStatus: "IN_STOCK" | "OUT_OF_STOCK" | "LOW_STOCK" | "UPCOMING";
   badge?: string;
@@ -25,12 +29,19 @@ export interface IProduct extends Document {
   updatedAt: Date;
 }
 
+const variantImageSchema = new Schema<IVariantImage>(
+  {
+    url: { type: String, required: true },
+    publicId: { type: String, required: true },
+  },
+  { _id: false },
+);
+
 const variantSchema = new Schema<IVariant>({
   sizeLabel: { type: String, required: true },
   subtitle: { type: String },
   price: { type: Number, required: true },
-  imageUrl: { type: String, required: true },
-  imagePublicId: { type: String, required: true },
+  images: { type: [variantImageSchema], required: true },
   stock: { type: Number, default: 0 },
   stockStatus: {
     type: String,

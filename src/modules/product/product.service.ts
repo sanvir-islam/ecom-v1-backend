@@ -4,7 +4,6 @@ import { Product } from "./product.model.js";
 import type { CreateProductDTO, UpdateProductDTO } from "./product.schema.js";
 import { AppError } from "../../middleware/errorHandler.js";
 
-// Helper to strip 'undefined' fields preventing Mongoose strict-type crashes
 const cleanData = <T>(data: T): any => JSON.parse(JSON.stringify(data));
 
 export async function getStorefrontProduct() {
@@ -17,31 +16,41 @@ export async function getAllProducts() {
   return await Product.find({ isDeleted: false }).sort({ createdAt: -1 });
 }
 
-// NEW: Fetch only the soft-deleted products so the admin can restore them
 export async function getArchivedProducts() {
   return await Product.find({ isDeleted: true }).sort({ createdAt: -1 });
 }
 
+// Products are always created as inactive (upcoming) — use activateProduct() to go live
 export async function createProduct(data: CreateProductDTO) {
   const cleanedData = cleanData(data);
+  cleanedData.isActive = false;
 
-  if (cleanedData.isActive) {
-    const allUpcoming = cleanedData.variants.every((v: any) => v.stockStatus === "UPCOMING");
-    if (allUpcoming) throw new AppError("An active product cannot have only UPCOMING variants.", 400);
+  try {
+    const createdProducts = await Product.create([cleanedData]);
+    return createdProducts[0];
+  } catch (error) {
+    throw error;
   }
+}
+
+// Dedicated activate toggle — only one product active at a time
+export async function activateProduct(id: string) {
+  const product = await Product.findById(id);
+  if (!product || product.isDeleted) throw new Error("NOT_FOUND");
+  if (product.isActive) throw new Error("ALREADY_ACTIVE");
+
+  const allUpcoming = product.variants.every((v) => v.stockStatus === "UPCOMING");
+  if (allUpcoming) throw new Error("ACTIVE_UPCOMING_CONFLICT");
 
   const session = await mongoose.startSession();
   session.startTransaction();
 
   try {
-    if (cleanedData.isActive === true) {
-      await Product.updateMany({ isDeleted: false }, { isActive: false }, { session });
-    }
-
-    const createdProducts = await Product.create([cleanedData], { session });
-
+    await Product.updateMany({ _id: { $ne: id }, isDeleted: false }, { isActive: false }, { session });
+    product.isActive = true;
+    await product.save({ session });
     await session.commitTransaction();
-    return createdProducts[0];
+    return product;
   } catch (error) {
     await session.abortTransaction();
     throw error;
@@ -56,25 +65,19 @@ export async function updateProduct(id: string, data: UpdateProductDTO) {
   const oldProduct = await Product.findById(id);
   if (!oldProduct || oldProduct.isDeleted) throw new Error("NOT_FOUND");
 
-  const isBecomingActive = cleanedData.isActive === true && !oldProduct.isActive;
-  const isBecomingInactive = cleanedData.isActive === false && oldProduct.isActive;
-  const remainsActive = (cleanedData.isActive === true || cleanedData.isActive === undefined) && oldProduct.isActive;
-
-  if (isBecomingActive || remainsActive) {
-    const variantsToCheck = cleanedData.variants || oldProduct.variants;
-    const allUpcoming = variantsToCheck.every((v: any) => v.stockStatus === "UPCOMING");
+  // If updating variants of an active product, cannot make all of them UPCOMING
+  if (oldProduct.isActive && cleanedData.variants) {
+    const allUpcoming = cleanedData.variants.every((v: any) => v.stockStatus === "UPCOMING");
     if (allUpcoming) throw new Error("ACTIVE_UPCOMING_CONFLICT");
   }
 
-  if (isBecomingInactive) {
-    throw new Error("CANNOT_DEACTIVATE_ACTIVE");
-  }
-
+  // Collect old Cloudinary publicIds that are no longer in the updated variants
   let imagesToDelete: string[] = [];
-
   if (cleanedData.variants) {
-    const oldPublicIds = oldProduct.variants.map((v) => v.imagePublicId).filter(Boolean);
-    const newPublicIds = cleanedData.variants.map((v: any) => v.imagePublicId).filter(Boolean);
+    const oldPublicIds = oldProduct.variants.flatMap((v) => v.images.map((img) => img.publicId)).filter(Boolean);
+    const newPublicIds = cleanedData.variants
+      .flatMap((v: any) => (v.images || []).map((img: any) => img.publicId))
+      .filter(Boolean);
     imagesToDelete = oldPublicIds.filter((oldId) => !newPublicIds.includes(oldId));
   }
 
@@ -82,10 +85,6 @@ export async function updateProduct(id: string, data: UpdateProductDTO) {
   session.startTransaction();
 
   try {
-    if (isBecomingActive) {
-      await Product.updateMany({ _id: { $ne: id }, isDeleted: false }, { isActive: false }, { session });
-    }
-
     const updatedProduct = await Product.findByIdAndUpdate(id, cleanedData, { new: true, session });
     await session.commitTransaction();
 
@@ -103,31 +102,24 @@ export async function updateProduct(id: string, data: UpdateProductDTO) {
 }
 
 export async function deleteProduct(id: string) {
-  const totalActiveProducts = await Product.countDocuments({ isDeleted: false });
-  if (totalActiveProducts <= 1) throw new Error("CANNOT_DELETE_LAST");
+  const totalActive = await Product.countDocuments({ isDeleted: false });
+  if (totalActive <= 1) throw new Error("CANNOT_DELETE_LAST");
 
   const product = await Product.findById(id);
   if (!product || product.isDeleted) throw new Error("NOT_FOUND");
-
-  // This is your guard! It guarantees active products cannot be deleted.
   if (product.isActive) throw new Error("CANNOT_DELETE_ACTIVE");
 
   product.isDeleted = true;
   await product.save();
-
   return true;
 }
 
-// NEW: Logic to undo the soft delete
 export async function restoreProduct(id: string) {
   const product = await Product.findById(id);
-
   if (!product) throw new Error("NOT_FOUND");
   if (!product.isDeleted) throw new Error("ALREADY_RESTORED");
 
   product.isDeleted = false;
-  // Note: We do NOT make it active automatically, just restore it to the draft/inactive state
   await product.save();
-
   return product;
 }

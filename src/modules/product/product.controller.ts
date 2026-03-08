@@ -77,11 +77,7 @@ export async function updateProductHandler(req: Request, res: Response) {
     if (error.code === 11000) return res.status(409).json({ message: "A product with this slug already exists" });
     if (error.message === "NOT_FOUND") return res.status(404).json({ message: "Product not found" });
     if (error.message === "ACTIVE_UPCOMING_CONFLICT")
-      return res.status(400).json({ message: "An active product cannot have only UPCOMING variants." });
-    if (error.message === "CANNOT_DEACTIVATE_ACTIVE")
-      return res.status(400).json({
-        message: "Cannot deactivate the currently active product directly. Set another product to active instead.",
-      });
+      return res.status(400).json({ message: "Cannot set all variants to UPCOMING on an active product." });
 
     return res.status(500).json({ message: "Internal server error" });
   }
@@ -109,7 +105,22 @@ export async function deleteProductHandler(req: Request, res: Response) {
   }
 }
 
-// NEW: Handler to restore a deleted product
+export async function activateProductHandler(req: Request, res: Response) {
+  try {
+    const paramsParsed = productIdParamSchema.safeParse(req.params);
+    if (!paramsParsed.success) return res.status(400).json({ errors: paramsParsed.error.issues });
+
+    const product = await ProductService.activateProduct(paramsParsed.data.id);
+    return res.status(200).json({ message: "Product is now live on the storefront", product });
+  } catch (error: any) {
+    if (error.message === "NOT_FOUND") return res.status(404).json({ message: "Product not found" });
+    if (error.message === "ALREADY_ACTIVE") return res.status(400).json({ message: "This product is already active" });
+    if (error.message === "ACTIVE_UPCOMING_CONFLICT")
+      return res.status(400).json({ message: "Cannot activate a product where all variants are UPCOMING" });
+    return res.status(500).json({ message: "Internal server error" });
+  }
+}
+
 export async function restoreProductHandler(req: Request, res: Response) {
   try {
     const paramsParsed = productIdParamSchema.safeParse(req.params);

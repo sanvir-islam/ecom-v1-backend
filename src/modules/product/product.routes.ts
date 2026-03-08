@@ -3,11 +3,12 @@ import {
   getAllProductsHandler,
   createProductHandler,
   updateProductHandler,
+  activateProductHandler,
   getStorefrontProductHandler,
   uploadImageHandler,
   deleteProductHandler,
-  getArchivedProductsHandler, // Added
-  restoreProductHandler, // Added
+  getArchivedProductsHandler,
+  restoreProductHandler,
 } from "./product.controller.js";
 
 import { requireAuth } from "../../middleware/requireAuth.js";
@@ -31,6 +32,7 @@ router.post("/", requireAuth, createProductHandler);
 router.put("/:id", requireAuth, updateProductHandler);
 router.delete("/:id", requireAuth, deleteProductHandler); // soft delete
 
+router.put("/:id/activate", requireAuth, activateProductHandler);
 router.put("/:id/restore", requireAuth, restoreProductHandler);
 
 // Admin File Upload Route
