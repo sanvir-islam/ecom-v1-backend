@@ -14,6 +14,11 @@ export interface IVariant {
   stock: number;
   stockStatus: "IN_STOCK" | "OUT_OF_STOCK" | "LOW_STOCK" | "UPCOMING";
   badge?: string;
+  // Parcel specs for Shippo rate calculation — edit per variant from dashboard
+  weight: number;   // oz
+  length: number;   // inches
+  width: number;    // inches
+  height: number;   // inches
 }
 
 export interface IProduct extends Document {
@@ -49,6 +54,10 @@ const variantSchema = new Schema<IVariant>({
     default: "UPCOMING",
   },
   badge: { type: String },
+  weight: { type: Number, default: 16 },  // oz — update per variant from dashboard
+  length: { type: Number, default: 6 },   // inches
+  width: { type: Number, default: 6 },    // inches
+  height: { type: Number, default: 6 },   // inches
 });
 
 const productSchema = new Schema<IProduct>(

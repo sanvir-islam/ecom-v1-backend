@@ -5,24 +5,34 @@ import { Order } from "../order/order.model.js";
 import { Product } from "../product/product.model.js";
 import { emailQueue } from "../../config/queue.js";
 import { getOrderReceiptTemplate } from "../../templates/order.template.js";
+import { getShippingTemplate } from "../../templates/shipping.template.js";
+import { purchaseShippingLabel } from "../shipping/shipping.service.js";
 
-// 1. Initialize Stripe
 export const stripe = new Stripe(env.STRIPE_SECRET_KEY);
 
-// 2. Generate the Secure Checkout Page with Shipping Fees
+// ─── Create Stripe Checkout Session ─────────────────────────────────────────
+// Shipping cost comes from Shippo rate selected on frontend — added as a line item
 export async function createCheckoutSession(order: any) {
-  const lineItems = order.items.map((item: any) => {
-    return {
+  const lineItems = order.items.map((item: any) => ({
+    price_data: {
+      currency: "usd",
+      product_data: { name: `${item.name} - ${item.sizeLabel}` },
+      unit_amount: Math.round(item.priceAtPurchase * 100),
+    },
+    quantity: item.quantity,
+  }));
+
+  // Shipping is a separate line item — customer already selected carrier on our form
+  if (order.shippingCost > 0) {
+    lineItems.push({
       price_data: {
         currency: "usd",
-        product_data: {
-          name: `${item.name} - ${item.sizeLabel}`,
-        },
-        unit_amount: Math.round(item.priceAtPurchase * 100),
+        product_data: { name: "Shipping" },
+        unit_amount: Math.round(order.shippingCost * 100),
       },
-      quantity: item.quantity,
-    };
-  });
+      quantity: 1,
+    });
+  }
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
@@ -31,40 +41,6 @@ export async function createCheckoutSession(order: any) {
     client_reference_id: order._id.toString(),
     success_url: `http://localhost:${env.PORT}/api/order/session/{CHECKOUT_SESSION_ID}`,
     cancel_url: `http://localhost:${env.PORT}/api/order/session/{CHECKOUT_SESSION_ID}`,
-
-    // STRICTLY US ONLY
-    shipping_address_collection: {
-      allowed_countries: ["US"],
-    },
-
-    // DYNAMIC SHIPPING FEES
-    shipping_options: [
-      {
-        shipping_rate_data: {
-          type: "fixed_amount",
-          fixed_amount: {
-            amount: 500, // $5.00 in CENTS
-            currency: "usd",
-          },
-          display_name: "Standard US Shipping",
-          delivery_estimate: {
-            minimum: { unit: "business_day", value: 3 },
-            maximum: { unit: "business_day", value: 5 },
-          },
-        },
-      },
-      {
-        shipping_rate_data: {
-          type: "fixed_amount",
-          fixed_amount: { amount: 1500, currency: "usd" }, // $15.00
-          display_name: "Overnight Express",
-          delivery_estimate: {
-            minimum: { unit: "business_day", value: 1 },
-            maximum: { unit: "business_day", value: 1 },
-          },
-        },
-      },
-    ],
   });
 
   order.stripeSessionId = session.id;
@@ -74,7 +50,7 @@ export async function createCheckoutSession(order: any) {
   return session.url;
 }
 
-// 3. The Webhook Handler (Enterprise-Grade with Transactions & Atomic Updates)
+// ─── Stripe Webhook Handler ──────────────────────────────────────────────────
 export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
   let event: Stripe.Event;
 
@@ -102,21 +78,17 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
           return { received: true };
         }
 
-        // Fraud check: product subtotal + shipping selected on Stripe must match what was actually charged
-        const productSubtotalCents = Math.round(order.totalAmount * 100);
-        const shippingCents = session.total_details?.amount_shipping ?? 0;
-        const expectedTotal = productSubtotalCents + shippingCents;
-
-        if (session.amount_total !== expectedTotal) {
+        // Fraud check: expected = product subtotal + shipping line item
+        const expectedCents = Math.round((order.totalAmount + order.shippingCost) * 100);
+        if (session.amount_total !== expectedCents) {
           throw new Error(
-            `Payment amount mismatch for order ${orderId}: expected ${expectedTotal} cents, got ${session.amount_total} cents`,
+            `Payment amount mismatch for order ${orderId}: expected ${expectedCents} cents, got ${session.amount_total} cents`,
           );
         }
 
         order.paymentStatus = "paid";
         order.orderStatus = "processing";
         order.stripePaymentIntentId = session.payment_intent as string;
-        order.shippingCost = shippingCents / 100;
         await order.save({ session: dbSession });
 
         for (const item of order.items) {
@@ -128,14 +100,10 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
 
           if (updatedProduct) {
             const variant = updatedProduct.variants.find((v) => v._id?.toString() === item.variantId.toString());
-
             if (variant) {
               if (variant.stock < 0) {
-                console.log(
-                  `🚨 OVERSELL ALERT: ${updatedProduct.name} (${variant.sizeLabel}) has dropped to ${variant.stock}! Contact customer for refund.`,
-                );
+                console.log(`🚨 OVERSELL ALERT: ${updatedProduct.name} (${variant.sizeLabel}) stock: ${variant.stock}`);
               }
-
               if (variant.stock <= 0 && variant.stockStatus !== "OUT_OF_STOCK") {
                 await Product.updateOne(
                   { _id: item.productId, "variants._id": item.variantId },
@@ -149,10 +117,10 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
 
         await dbSession.commitTransaction();
         dbSession.endSession();
+        console.log(`✅ Order ${orderId} paid & inventory updated.`);
 
-        console.log(`✅ Order ${orderId} Paid & Inventory Updated Atomically!`);
-
-        const htmlContent = getOrderReceiptTemplate(
+        // Send order confirmation email
+        const receiptHtml = getOrderReceiptTemplate(
           order.shippingAddress.firstName,
           order._id.toString(),
           order.totalAmount,
@@ -165,14 +133,48 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
           type: "ORDER_CONFIRMATION",
           to: order.email,
           subject: "Order Confirmed - The California Pickle 🥒",
-          html: htmlContent,
+          html: receiptHtml,
         });
 
-        console.log(`✉️ Added Order Confirmation to Redis queue for ${order.email}`);
+        // Auto-purchase Shippo label (non-blocking — label failure doesn't rollback payment)
+        if (order.shippoRateId) {
+          try {
+            const label = await purchaseShippingLabel(order.shippoRateId);
+
+            await Order.findByIdAndUpdate(orderId, {
+              trackingNumber: label.trackingNumber,
+              trackingUrl: label.trackingUrl,
+              shippingLabelUrl: label.labelUrl,
+              shippingCarrier: label.carrier,
+              orderStatus: "shipped",
+            });
+
+            const shippingHtml = getShippingTemplate(
+              order.shippingAddress.firstName,
+              order._id.toString(),
+              label.trackingNumber,
+              label.trackingUrl,
+              label.carrier,
+            );
+
+            await emailQueue.add("send-shipping-notification", {
+              type: "SHIPPED",
+              to: order.email,
+              subject: "Your order is on the way — The California Pickle 🥒",
+              html: shippingHtml,
+            });
+
+            console.log(`📦 Label purchased & tracking email queued for order ${orderId}`);
+          } catch (labelError: any) {
+            // Label failure is logged but does NOT fail the webhook
+            // Admin can manually purchase label from Shippo dashboard
+            console.error(`⚠️ Shippo label purchase failed for order ${orderId}:`, labelError.message);
+          }
+        }
       } catch (error) {
         await dbSession.abortTransaction();
         dbSession.endSession();
-        console.error("🚨 Webhook Transaction Failed & Rolled Back:", error);
+        console.error("🚨 Webhook transaction failed & rolled back:", error);
         throw error;
       }
     }

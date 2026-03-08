@@ -15,7 +15,7 @@ const transporter = nodemailer.createTransport({
 
 // 2. Define exactly what data the job expects
 interface EmailJobData {
-  type: "PASSWORD_RESET" | "WELCOME" | "ORDER_CONFIRMATION" | "ABANDONED_CART";
+  type: "PASSWORD_RESET" | "WELCOME" | "ORDER_CONFIRMATION" | "ABANDONED_CART" | "SHIPPED";
   to: string;
   subject: string;
   html: string;

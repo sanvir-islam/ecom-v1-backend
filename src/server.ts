@@ -20,6 +20,8 @@ import adminRoutes from "./modules/admin/admin.routes.js";
 import productRoutes from "./modules/product/product.routes.js";
 import orderRoutes from "./modules/order/order.routes.js";
 import paymentRoutes from "./modules/payment/payment.routes.js";
+import settingsRoutes from "./modules/settings/settings.routes.js";
+import shippingRoutes from "./modules/shipping/shipping.routes.js";
 // redis and email import
 import "./config/redis.js";
 import "./jobs/email.worker.js";
@@ -53,6 +55,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/order", orderRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/shipping", shippingRoutes);
 // 5. Start Server
 const PORT = env.PORT || 5000;
 

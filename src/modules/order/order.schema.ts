@@ -23,6 +23,8 @@ export const createOrderSchema = z.object({
       }),
     )
     .min(1, { message: "Order must contain at least one item" }),
+  shippoRateId: z.string().min(1, { message: "A shipping rate must be selected" }),
+  shippingCost: z.number().nonnegative({ message: "Shipping cost must be 0 or greater" }),
 });
 
 export type CreateOrderDTO = z.infer<typeof createOrderSchema>;

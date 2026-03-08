@@ -61,6 +61,8 @@ export async function createPendingOrder(data: CreateOrderDTO) {
     shippingAddress: data.shippingAddress,
     items: processedItems,
     totalAmount: calculatedTotal,
+    shippingCost: data.shippingCost,
+    shippoRateId: data.shippoRateId,
     paymentStatus: "pending",
   };
 

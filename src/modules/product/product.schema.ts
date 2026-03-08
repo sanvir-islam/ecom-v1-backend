@@ -21,6 +21,11 @@ const variantSchema = z.object({
   stock: z.number().int().nonnegative().default(0),
   stockStatus: stockStatusEnum.default("UPCOMING"),
   badge: z.string().optional(),
+  // Parcel specs for Shippo — update from dashboard after creation
+  weight: z.number().positive({ message: "Weight (oz) must be greater than 0" }).default(16),
+  length: z.number().positive({ message: "Length (in) must be greater than 0" }).default(6),
+  width: z.number().positive({ message: "Width (in) must be greater than 0" }).default(6),
+  height: z.number().positive({ message: "Height (in) must be greater than 0" }).default(6),
 });
 
 // isActive is intentionally excluded — products are always created as inactive (upcoming)
