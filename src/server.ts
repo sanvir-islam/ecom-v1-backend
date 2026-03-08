@@ -23,6 +23,7 @@ import paymentRoutes from "./modules/payment/payment.routes.js";
 // redis and email import
 import "./config/redis.js";
 import "./jobs/email.worker.js";
+import "./jobs/reminder.worker.js";
 import { env } from "./config/env.js";
 import { globalLimiter } from "./middleware/rateLimiter.js";
 

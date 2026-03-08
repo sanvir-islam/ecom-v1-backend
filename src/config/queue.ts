@@ -1,9 +1,12 @@
 import { Queue } from "bullmq";
-import { redisConnection } from "./redis.js"; // 👈 Import the master connection!
+import { redisConnection } from "./redis.js";
 
-// Create the Inbox using the shared connection
 export const emailQueue = new Queue("email-queue", {
   connection: redisConnection,
 });
 
-console.log("📦 Redis Email Queue Initialized!");
+export const reminderQueue = new Queue("reminder-queue", {
+  connection: redisConnection,
+});
+
+console.log("📦 Redis Email & Reminder Queues Initialized!");

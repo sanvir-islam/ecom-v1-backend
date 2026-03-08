@@ -25,9 +25,9 @@ export interface IOrder extends Document {
   totalAmount: number;
   paymentStatus: "pending" | "paid" | "failed";
   stripeSessionId?: string | null;
-  // 👇 ADDED: We will need this exact ID later when we build the refund feature
   stripePaymentIntentId?: string | null;
-  orderStatus: "processing" | "shipped" | "delivered" | "cancelled";
+  checkoutUrl?: string | null;
+  orderStatus: "pending_payment" | "processing" | "shipped" | "delivered" | "cancelled";
   createdAt: Date;
   updatedAt: Date;
 }
@@ -63,10 +63,11 @@ const orderSchema = new Schema<IOrder>(
     },
     stripeSessionId: { type: String, default: null },
     stripePaymentIntentId: { type: String, default: null },
+    checkoutUrl: { type: String, default: null },
     orderStatus: {
       type: String,
-      enum: ["processing", "shipped", "delivered", "cancelled"],
-      default: "processing",
+      enum: ["pending_payment", "processing", "shipped", "delivered", "cancelled"],
+      default: "pending_payment",
     },
   },
   { timestamps: true },

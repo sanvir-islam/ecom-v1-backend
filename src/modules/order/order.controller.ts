@@ -3,6 +3,9 @@ import * as OrderService from "./order.service.js";
 import * as PaymentService from "../payment/payment.service.js";
 import { createOrderSchema, orderIdParamSchema, updateOrderStatusSchema } from "./order.schema.js";
 import { AppError } from "../../middleware/errorHandler.js";
+import { reminderQueue, emailQueue } from "../../config/queue.js";
+import { getAbandonedCartTemplate } from "../../templates/abandoned-cart.template.js";
+import { Order } from "./order.model.js";
 
 export async function createOrderHandler(req: Request, res: Response) {
   try {
@@ -14,6 +17,17 @@ export async function createOrderHandler(req: Request, res: Response) {
 
     // 2. Generate the Stripe Checkout Link
     const checkoutUrl = await PaymentService.createCheckoutSession(order);
+
+    // 3. Schedule abandoned cart reminder — fires in 2.5 hours if still unpaid
+    await reminderQueue.add(
+      "abandoned-cart-check",
+      {
+        orderId: order._id.toString(),
+        email: order.email,
+        firstName: order.shippingAddress.firstName,
+      },
+      { delay: 2.5 * 60 * 60 * 1000 },
+    );
 
     return res.status(201).json({
       message: "Order initialized, redirecting to payment...",
@@ -67,6 +81,65 @@ export async function getOrderBySessionHandler(req: Request, res: Response) {
     }
     console.error("Get Order by Session Error:", error);
     return res.status(500).json({ message: "Failed to fetch order details" });
+  }
+}
+
+export async function getUnpaidOrdersHandler(req: Request, res: Response) {
+  try {
+    const orders = await OrderService.getUnpaidOrders();
+    return res.status(200).json({ data: orders, total: orders.length });
+  } catch (error) {
+    console.error("Get Unpaid Orders Error:", error);
+    return res.status(500).json({ message: "Failed to fetch unpaid orders" });
+  }
+}
+
+export async function sendManualReminderHandler(req: Request, res: Response) {
+  try {
+    const paramsParsed = orderIdParamSchema.safeParse(req.params);
+    if (!paramsParsed.success) return res.status(400).json({ errors: paramsParsed.error.issues });
+
+    const order = await OrderService.getOrderById(paramsParsed.data.id);
+
+    if (order.paymentStatus === "paid") {
+      return res.status(400).json({ message: "Order is already paid — no reminder needed" });
+    }
+
+    let checkoutUrl = order.checkoutUrl;
+
+    // Session expired or missing — generate a fresh Stripe checkout session
+    if (!checkoutUrl || order.paymentStatus === "failed") {
+      checkoutUrl = await PaymentService.createCheckoutSession(order);
+      // Reset order back to pending so the new session is tracked properly
+      await Order.findByIdAndUpdate(order._id, {
+        paymentStatus: "pending",
+        orderStatus: "pending_payment",
+      });
+      console.log(`🔄 Fresh checkout session created for expired order ${order._id}`);
+    }
+
+    const html = getAbandonedCartTemplate(
+      order.shippingAddress.firstName,
+      order.items,
+      order.totalAmount,
+      checkoutUrl!,
+    );
+
+    await emailQueue.add("send-manual-reminder", {
+      type: "ABANDONED_CART",
+      to: order.email,
+      subject: "Your order is still waiting — The California Pickle",
+      html,
+    });
+
+    console.log(`✉️ Manual reminder sent by admin for order ${order._id} to ${order.email}`);
+    return res.status(200).json({ message: `Reminder email sent to ${order.email}` });
+  } catch (error: any) {
+    if (error instanceof AppError) {
+      return res.status(error.statusCode).json({ message: error.message });
+    }
+    console.error("Send Manual Reminder Error:", error);
+    return res.status(500).json({ message: "Failed to send reminder" });
   }
 }
 

@@ -1,18 +1,18 @@
 import Stripe from "stripe";
+import mongoose from "mongoose";
 import { env } from "../../config/env.js";
 import { Order } from "../order/order.model.js";
-import { Product } from "../product/product.model.js"; // 👈 ADDED: We need this to deduct stock!
-import { emailQueue } from "../../config/queue.js"; // 👈 Your BullMQ Queue
+import { Product } from "../product/product.model.js";
+import { emailQueue } from "../../config/queue.js";
 import { getOrderReceiptTemplate } from "../../templates/order.template.js";
 
-// 1. Initialize Stripe (Bypassing the strict literal type check with 'as any')
+// 1. Initialize Stripe
 export const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
   apiVersion: "2023-10-16" as any,
 });
 
-// 2. Generate the Secure Checkout Page
+// 2. Generate the Secure Checkout Page with Shipping Fees
 export async function createCheckoutSession(order: any) {
-  // Map our database items into the exact format Stripe requires
   const lineItems = order.items.map((item: any) => {
     return {
       price_data: {
@@ -20,7 +20,6 @@ export async function createCheckoutSession(order: any) {
         product_data: {
           name: `${item.name} - ${item.sizeLabel}`,
         },
-        // Stripe expects amounts in CENTS (so $22.00 is 2200)
         unit_amount: Math.round(item.priceAtPurchase * 100),
       },
       quantity: item.quantity,
@@ -31,66 +30,118 @@ export async function createCheckoutSession(order: any) {
     mode: "payment",
     customer_email: order.email,
     line_items: lineItems,
-
-    // We attach the DB Order ID here so when Stripe pings us later, we know EXACTLY which order was paid for
     client_reference_id: order._id.toString(),
-
-    // Where Stripe sends them after they pay
-    // Note: I added '/api' so it correctly hits the GET route we built earlier for your testing!
     success_url: `http://localhost:${env.PORT}/api/order/session/{CHECKOUT_SESSION_ID}`,
     cancel_url: `http://localhost:${env.PORT}/api/order/session/{CHECKOUT_SESSION_ID}`,
 
-    // We strictly enforce US shipping
+    // STRICTLY US ONLY
     shipping_address_collection: {
       allowed_countries: ["US"],
     },
+
+    // DYNAMIC SHIPPING FEES
+    shipping_options: [
+      {
+        shipping_rate_data: {
+          type: "fixed_amount",
+          fixed_amount: {
+            amount: 500, // $5.00 in CENTS
+            currency: "usd",
+          },
+          display_name: "Standard US Shipping",
+          delivery_estimate: {
+            minimum: { unit: "business_day", value: 3 },
+            maximum: { unit: "business_day", value: 5 },
+          },
+        },
+      },
+      {
+        shipping_rate_data: {
+          type: "fixed_amount",
+          fixed_amount: { amount: 1500, currency: "usd" }, // $15.00
+          display_name: "Overnight Express",
+          delivery_estimate: {
+            minimum: { unit: "business_day", value: 1 },
+            maximum: { unit: "business_day", value: 1 },
+          },
+        },
+      },
+    ],
   });
 
-  // Save the Stripe Session ID to our database order so we have a record of it
   order.stripeSessionId = session.id;
+  order.checkoutUrl = session.url;
   await order.save();
 
-  return session.url; // This is the magical link we send to the frontend!
+  return session.url;
 }
 
-// 3. The Webhook Handler (When Stripe says "Give them the goods!")
+// 3. The Webhook Handler (Enterprise-Grade with Transactions & Atomic Updates)
 export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
   let event: Stripe.Event;
 
   try {
-    // This verifies that the ping ACTUALLY came from Stripe and not a hacker
     event = stripe.webhooks.constructEvent(rawBody, signature, env.STRIPE_WEBHOOK_SECRET);
   } catch (err: any) {
     throw new Error(`Webhook Verification Failed: ${err.message}`);
   }
 
-  // If the payment was completely successful
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
     const orderId = session.client_reference_id;
 
     if (orderId) {
-      const order = await Order.findById(orderId);
+      const dbSession = await mongoose.startSession();
+      dbSession.startTransaction();
 
-      // We only process if the order exists and is still "pending"
-      if (order && order.paymentStatus === "pending") {
-        // 1. Mark as Paid and save the Payment Intent ID (for future refunds)
-        order.paymentStatus = "paid";
-        order.stripePaymentIntentId = session.payment_intent as string;
-        await order.save();
+      try {
+        const order = await Order.findOne({ _id: orderId, paymentStatus: "pending" }).session(dbSession);
 
-        // 2. SAFELY DEDUCT THE INVENTORY NOW!
-        for (const item of order.items) {
-          // This goes into the Product collection and subtracts the exact amount bought
-          await Product.updateOne(
-            { _id: item.productId, "variants._id": item.variantId },
-            { $inc: { "variants.$.stock": -item.quantity } },
-          );
+        if (!order) {
+          await dbSession.abortTransaction();
+          dbSession.endSession();
+          console.log(`ℹ️ Webhook duplicate or order ${orderId} already processed.`);
+          return { received: true };
         }
 
-        console.log(`✅ Order ${orderId} Paid & Stock Deducted Successfully!`);
+        order.paymentStatus = "paid";
+        order.orderStatus = "processing";
+        order.stripePaymentIntentId = session.payment_intent as string;
+        await order.save({ session: dbSession });
 
-        // 3. 🚨 ASYNC BACKGROUND EMAIL TRIGGER 🚨
+        for (const item of order.items) {
+          const updatedProduct = await Product.findOneAndUpdate(
+            { _id: item.productId, "variants._id": item.variantId },
+            { $inc: { "variants.$.stock": -item.quantity } },
+            { new: true, session: dbSession },
+          );
+
+          if (updatedProduct) {
+            const variant = updatedProduct.variants.find((v) => v._id?.toString() === item.variantId.toString());
+
+            if (variant) {
+              if (variant.stock < 0) {
+                console.log(
+                  `🚨 OVERSELL ALERT: ${updatedProduct.name} (${variant.sizeLabel}) has dropped to ${variant.stock}! Contact customer for refund.`,
+                );
+              }
+
+              if (variant.stock <= 0 && variant.stockStatus !== "OUT_OF_STOCK") {
+                await Product.updateOne(
+                  { _id: item.productId, "variants._id": item.variantId },
+                  { $set: { "variants.$.stockStatus": "OUT_OF_STOCK" } },
+                  { session: dbSession },
+                );
+              }
+            }
+          }
+        }
+
+        await dbSession.commitTransaction();
+        dbSession.endSession();
+
+        console.log(`✅ Order ${orderId} Paid & Inventory Updated Atomically!`);
+
         const htmlContent = getOrderReceiptTemplate(
           order.shippingAddress.firstName,
           order._id.toString(),
@@ -99,7 +150,6 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
           order.shippingAddress,
         );
 
-        // Toss it into the Redis Queue. Takes 1ms!
         await emailQueue.add("send-order-receipt", {
           type: "ORDER_CONFIRMATION",
           to: order.email,
@@ -108,15 +158,27 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
         });
 
         console.log(`✉️ Added Order Confirmation to Redis queue for ${order.email}`);
-      } else {
-        console.error(`🚨 Webhook received for Order ${orderId}, but it's not pending or doesn't exist!`);
+      } catch (error) {
+        await dbSession.abortTransaction();
+        dbSession.endSession();
+        console.error("🚨 Webhook Transaction Failed & Rolled Back:", error);
+        throw error;
       }
     }
+  } else if (event.type === "checkout.session.expired") {
+    const session = event.data.object as Stripe.Checkout.Session;
+    const orderId = session.client_reference_id;
+
+    if (orderId) {
+      await Order.findOneAndUpdate(
+        { _id: orderId, paymentStatus: "pending" },
+        { paymentStatus: "failed" },
+      );
+      console.log(`⌛ Stripe session expired for order ${orderId} — marked as failed.`);
+    }
   } else {
-    // Just logs other events (like payment failed, etc) so you can see them in your terminal
     console.log(`ℹ️ Unhandled Stripe Event: ${event.type}`);
   }
 
-  // Instantly respond 200 OK so Stripe knows we successfully caught the webhook
   return { received: true };
 }

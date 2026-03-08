@@ -3,7 +3,9 @@ import {
   createOrderHandler,
   getAllOrdersHandler,
   getOrderBySessionHandler,
-  updateOrderStatusHandler, // 👈 Import new handler
+  updateOrderStatusHandler,
+  getUnpaidOrdersHandler,
+  sendManualReminderHandler,
 } from "./order.controller.js";
 import { requireAuth } from "../../middleware/requireAuth.js";
 
@@ -18,9 +20,9 @@ router.get("/session/:sessionId", getOrderBySessionHandler);
 // ==========================================
 // Admin Routes (Dashboard)
 // ==========================================
-router.get("/admin/all", requireAuth, getAllOrdersHandler);
-
-// 👇 NEW: Update status route for the dashboard
-router.put("/admin/:id/status", requireAuth, updateOrderStatusHandler);
+router.get("/all", requireAuth, getAllOrdersHandler);
+router.get("/unpaid", requireAuth, getUnpaidOrdersHandler);
+router.post("/:id/remind", requireAuth, sendManualReminderHandler);
+router.put("/:id/status", requireAuth, updateOrderStatusHandler);
 
 export default router;
