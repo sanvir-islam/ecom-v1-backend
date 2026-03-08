@@ -110,6 +110,27 @@ export async function getShippingRates(
   return rates;
 }
 
+// ─── Verify a rate ID and return its price ───────────────────────────────────
+// Used to validate the shippingCost sent from the frontend hasn't been tampered with
+
+export async function verifyShippoRate(rateId: string): Promise<{ amount: number; carrier: string; service: string }> {
+  const response = await fetch(`${SHIPPO_BASE}/rates/${rateId}`, {
+    headers: shippoHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error("Shipping rate not found or has expired. Please refresh and try again.");
+  }
+
+  const data: any = await response.json();
+
+  return {
+    amount: parseFloat(data.amount),
+    carrier: data.provider,
+    service: data.servicelevel?.name,
+  };
+}
+
 // ─── Purchase label after payment confirmed ──────────────────────────────────
 
 export async function purchaseShippingLabel(rateId: string) {

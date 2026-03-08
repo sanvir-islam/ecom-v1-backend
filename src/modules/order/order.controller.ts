@@ -6,19 +6,29 @@ import { AppError } from "../../middleware/errorHandler.js";
 import { reminderQueue, emailQueue } from "../../config/queue.js";
 import { getAbandonedCartTemplate } from "../../templates/abandoned-cart.template.js";
 import { Order } from "./order.model.js";
+import { verifyShippoRate } from "../shipping/shipping.service.js";
 
 export async function createOrderHandler(req: Request, res: Response) {
   try {
     const parsed = createOrderSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ errors: parsed.error.issues });
 
-    // 1. Create the pending order in MongoDB
+    // 1. Verify shipping rate price matches what Shippo actually charges (tamper prevention)
+    const shippoRate = await verifyShippoRate(parsed.data.shippoRateId);
+    const priceDiff = Math.abs(shippoRate.amount - parsed.data.shippingCost);
+    if (priceDiff > 0.01) {
+      return res.status(400).json({
+        message: `Shipping cost mismatch. Expected $${shippoRate.amount.toFixed(2)}, got $${parsed.data.shippingCost.toFixed(2)}. Please refresh and try again.`,
+      });
+    }
+
+    // 2. Create the pending order in MongoDB
     const order = await OrderService.createPendingOrder(parsed.data);
 
-    // 2. Generate the Stripe Checkout Link
+    // 3. Generate the Stripe Checkout Link
     const checkoutUrl = await PaymentService.createCheckoutSession(order);
 
-    // 3. Schedule abandoned cart reminder — fires in 2.5 hours if still unpaid
+    // 4. Schedule abandoned cart reminder — fires in 2.5 hours if still unpaid
     await reminderQueue.add(
       "abandoned-cart-check",
       {
