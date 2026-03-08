@@ -6,6 +6,7 @@ import {
   activateProductHandler,
   getStorefrontProductHandler,
   uploadImageHandler,
+  uploadImagesHandler,
   deleteProductHandler,
   getArchivedProductsHandler,
   restoreProductHandler,
@@ -35,7 +36,8 @@ router.delete("/:id", requireAuth, deleteProductHandler); // soft delete
 router.put("/:id/activate", requireAuth, activateProductHandler);
 router.put("/:id/restore", requireAuth, restoreProductHandler);
 
-// Admin File Upload Route
+// Admin File Upload Routes
 router.post("/upload-image", requireAuth, upload.single("image"), uploadImageHandler);
+router.post("/upload-images", requireAuth, upload.array("images", 5), uploadImagesHandler);
 
 export default router;

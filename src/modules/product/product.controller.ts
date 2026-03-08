@@ -4,13 +4,31 @@ import { createProductSchema, updateProductSchema, productIdParamSchema } from "
 import { uploadToCloudinary } from "../../lib/cludinary.js";
 import { AppError } from "../../middleware/errorHandler.js";
 
+// Single image upload — returns { url, publicId }
 export async function uploadImageHandler(req: Request, res: Response) {
   try {
     if (!req.file) return res.status(400).json({ message: "No image file provided" });
     const result = await uploadToCloudinary(req.file.path, "california-pickle-products");
-    return res.status(200).json({ message: "Image uploaded successfully", url: result.url, publicId: result.publicId });
+    return res.status(200).json({ url: result.url, publicId: result.publicId });
   } catch (error: any) {
     return res.status(500).json({ message: error.message || "Failed to upload image" });
+  }
+}
+
+// Multiple image upload (up to 5) — returns [{ url, publicId }, ...]
+export async function uploadImagesHandler(req: Request, res: Response) {
+  try {
+    if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
+      return res.status(400).json({ message: "No image files provided" });
+    }
+
+    const results = await Promise.all(
+      req.files.map((file) => uploadToCloudinary(file.path, "california-pickle-products")),
+    );
+
+    return res.status(200).json({ images: results });
+  } catch (error: any) {
+    return res.status(500).json({ message: error.message || "Failed to upload images" });
   }
 }
 
