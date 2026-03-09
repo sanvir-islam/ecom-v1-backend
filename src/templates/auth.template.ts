@@ -9,7 +9,7 @@ export const getPasswordResetTemplate = (resetLink: string) => {
   const bodyBg = "#f3f4f6";
 
   const logoUrl =
-    "https://res.cloudinary.com/difxmboj2/image/upload/v1772583707/1000177134-removebg-preview_umnvh4.png";
+    "https://res.cloudinary.com/dngag0zog/image/upload/pickle-logo_mp20aq.png";
 
   return `
 <!DOCTYPE html>

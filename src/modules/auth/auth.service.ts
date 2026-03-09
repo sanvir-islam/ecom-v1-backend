@@ -5,6 +5,7 @@ import type { ForgotPasswordDTO, LoginDTO, ResetPasswordDTO } from "./auth.schem
 import { Admin } from "../admin/admin.model.js"; // Updated import!
 import { getPasswordResetTemplate } from "../../templates/auth.template.js";
 import { emailQueue } from "../../config/queue.js";
+import { env } from "../../config/env.js";
 
 // Helper function to generate tokens
 const generateTokens = (admin: any) => {
@@ -65,7 +66,7 @@ export async function forgotPassword(data: ForgotPasswordDTO) {
   admin.resetPasswordExpires = new Date(Date.now() + 15 * 60 * 1000);
   await admin.save();
 
-  const resetLink = `https://localhost:4200/api/auth/reset-password?token=${resetToken}`;
+  const resetLink = `${env.FRONTEND_URL}/admin/reset-password?token=${resetToken}`;
   const emailHtml = getPasswordResetTemplate(resetLink);
 
   await emailQueue.add(

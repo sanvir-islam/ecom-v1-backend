@@ -1,17 +1,19 @@
 export const getOrderReceiptTemplate = (
   firstName: string,
   orderId: string,
-  subtotal: number,
+  totalAmount: number,
   items: any[],
   shippingAddress: any,
   shippingCost: number = 0,
+  discountAmount: number = 0,
+  discountCode?: string | null,
 ) => {
   const currentYear = new Date().getFullYear();
   const headerGreen = "#8CE000";
   const black = "#000000";
   const bodyBg = "#f3f4f6";
   const logoUrl =
-    "https://res.cloudinary.com/difxmboj2/image/upload/v1772583707/1000177134-removebg-preview_umnvh4.png";
+    "https://res.cloudinary.com/dngag0zog/image/upload/pickle-logo_mp20aq.png";
 
   // Build the itemized table rows
   const itemsHtml = items
@@ -100,15 +102,20 @@ Your payment is locked in. We're getting your gear ready to ship. Here is your o
   <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
     <tr>
       <td align="right" style="padding: 6px 0; font-size: 14px; color: #6b7280;">Subtotal:</td>
-      <td align="right" width="100" style="padding: 6px 0; font-size: 14px; color: #111827; font-weight: 600;">$${subtotal.toFixed(2)}</td>
+      <td align="right" width="110" style="padding: 6px 0; font-size: 14px; color: #111827; font-weight: 600;">$${(totalAmount + discountAmount).toFixed(2)}</td>
     </tr>
+    ${discountAmount > 0 ? `
+    <tr>
+      <td align="right" style="padding: 6px 0; font-size: 14px; color: #5a9900;">Discount${discountCode ? ` (${discountCode})` : ""}:</td>
+      <td align="right" width="110" style="padding: 6px 0; font-size: 14px; color: #5a9900; font-weight: 700;">-$${discountAmount.toFixed(2)}</td>
+    </tr>` : ""}
     <tr>
       <td align="right" style="padding: 6px 0; font-size: 14px; color: #6b7280;">Shipping:</td>
-      <td align="right" width="100" style="padding: 6px 0; font-size: 14px; color: #111827; font-weight: 600;">$${shippingCost.toFixed(2)}</td>
+      <td align="right" width="110" style="padding: 6px 0; font-size: 14px; color: #111827; font-weight: 600;">$${shippingCost.toFixed(2)}</td>
     </tr>
     <tr>
       <td align="right" style="padding: 16px 0 0; font-size: 18px; font-weight: 900; color: #111827; border-top: 2px solid #111827;">TOTAL PAID:</td>
-      <td align="right" width="100" style="padding: 16px 0 0; font-size: 18px; font-weight: 900; color: #111827; border-top: 2px solid #111827;">$${(subtotal + shippingCost).toFixed(2)}</td>
+      <td align="right" width="110" style="padding: 16px 0 0; font-size: 18px; font-weight: 900; color: #111827; border-top: 2px solid #111827;">$${(totalAmount + shippingCost).toFixed(2)}</td>
     </tr>
   </table>
 

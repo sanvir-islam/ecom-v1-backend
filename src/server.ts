@@ -35,10 +35,22 @@ const app = express();
 app.set("trust proxy", 1);
 
 // 2. The CORS Fix (Allows cookies cross-origin)
+const allowedOrigins = [
+  "https://thecaliforniapickle.com",
+  "https://www.thecaliforniapickle.com",
+  "http://localhost:3000", // dev
+];
 app.use(
   cors({
-    origin: "*", // env.FRONTEND_URL
-    credentials: true, // This is the magic line that allows cookies to pass!
+    origin: (origin, callback) => {
+      // Allow server-to-server requests (no origin) and listed origins
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked: ${origin}`));
+      }
+    },
+    credentials: true,
   }),
 );
 app.use("/api/payments", paymentRoutes);

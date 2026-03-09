@@ -34,12 +34,28 @@ export async function createCheckoutSession(order: any) {
     });
   }
 
+  // Stripe Checkout does not support negative unit_amount on line items.
+  // Use Stripe's native coupon + discounts[] instead — this shows as a proper
+  // discount line on the Stripe-hosted page and the math still holds for the fraud check.
+  let stripeCouponId: string | undefined;
+  if (order.discountAmount > 0) {
+    const stripeCoupon = await stripe.coupons.create({
+      amount_off: Math.round(order.discountAmount * 100),
+      currency: "usd",
+      duration: "once",
+      max_redemptions: 1,
+      name: order.discountCode ? `Coupon: ${order.discountCode}` : "Discount",
+    });
+    stripeCouponId = stripeCoupon.id;
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     customer_email: order.email,
     line_items: lineItems,
+    ...(stripeCouponId ? { discounts: [{ coupon: stripeCouponId }] } : {}),
     client_reference_id: order._id.toString(),
-    success_url: `${env.FRONTEND_URL}/order/success?session_id={CHECKOUT_SESSION_ID}`,
+    success_url: `${env.FRONTEND_URL}/order/session/{CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.FRONTEND_URL}/checkout`,
   });
 
@@ -127,6 +143,8 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
           order.items,
           order.shippingAddress,
           order.shippingCost,
+          order.discountAmount ?? 0,
+          order.discountCode ?? undefined,
         );
 
         await emailQueue.add("send-order-receipt", {
