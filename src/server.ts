@@ -40,19 +40,20 @@ const allowedOrigins = [
   "https://www.thecaliforniapickle.com",
   "http://localhost:3000", // dev
 ];
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow server-to-server requests (no origin) and listed origins
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS blocked: ${origin}`));
-      }
-    },
-    credentials: true,
-  }),
-);
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow server-to-server requests (no origin) and listed origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS blocked: ${origin}`));
+    }
+  },
+  credentials: true,
+};
+// Explicit OPTIONS preflight handling (fixes multipart/file upload CORS issues)
+app.options(/(.*)/, cors(corsOptions));
+app.use(cors(corsOptions));
 app.use("/api/payments", paymentRoutes);
 
 // 3. Body & Cookie Parsers (The Cookie Fix)
@@ -69,7 +70,19 @@ app.use("/api/products", productRoutes);
 app.use("/api/order", orderRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/shipping", shippingRoutes);
-// 5. Start Server
+// 5. Global error handler — re-applies CORS headers so browser sees real errors not CORS failures
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+  const status = err.status || err.statusCode || 500;
+  console.error(`[${status}] ${err.message}`);
+  res.status(status).json({ message: err.message || "Internal Server Error" });
+});
+
+// 6. Start Server
 const PORT = env.PORT || 5000;
 
 // Connect to DB first, then start listening

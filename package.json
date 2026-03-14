@@ -23,6 +23,7 @@
   },
   "homepage": "https://github.com/sanvir-islam/ecom-v1-backend#readme",
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.4.3",
     "agenda": "^6.2.3",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.70.1",

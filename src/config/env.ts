@@ -1,9 +1,7 @@
 import { z } from "zod";
 import dotenv from "dotenv";
 
-if (process.env.NODE_ENV !== "production") {
-  dotenv.config();
-}
+dotenv.config();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -32,6 +30,7 @@ const envSchema = z.object({
 
   // Shipping
   SHIPPO_API_KEY: z.string().min(1, { message: "SHIPPO_API_KEY is required — get it from Shippo Dashboard > Settings > API" }),
+  SHIPPO_WEBHOOK_SECRET: z.string().optional(),
 
   // App
   FRONTEND_URL: z.url({ message: "FRONTEND_URL must be a valid URL — e.g. https://thecaliforniapickle.com (no trailing slash)" }),

@@ -1,6 +1,7 @@
 import { env } from "../../config/env.js";
 import { getSettings } from "../settings/settings.service.js";
 import { Product } from "../product/product.model.js";
+import { Order } from "../order/order.model.js";
 
 const SHIPPO_BASE = "https://api.goshippo.com";
 
@@ -8,6 +9,31 @@ const shippoHeaders = () => ({
   Authorization: `ShippoToken ${env.SHIPPO_API_KEY}`,
   "Content-Type": "application/json",
 });
+
+// ─── Handle Shippo tracking webhook ─────────────────────────────────────────
+
+export async function handleShippoWebhook(payload: any) {
+  if (payload.event !== "track_updated") return;
+
+  const trackingNumber = payload.data?.tracking_number;
+  const status = payload.data?.tracking_status?.status; // DELIVERED, TRANSIT, etc.
+
+  if (!trackingNumber || !status) return;
+
+  const orderStatus =
+    status === "DELIVERED" ? "delivered" : status === "TRANSIT" ? "shipped" : null;
+
+  if (!orderStatus) return;
+
+  const order = await Order.findOne({ trackingNumber });
+  if (!order) {
+    console.log(`ℹ️ Shippo webhook: no order found for tracking ${trackingNumber}`);
+    return;
+  }
+
+  await Order.findByIdAndUpdate(order._id, { orderStatus });
+  console.log(`📦 Order ${order._id} auto-updated to "${orderStatus}" via Shippo webhook`);
+}
 
 // ─── Get live carrier rates for a customer address + cart ───────────────────
 
