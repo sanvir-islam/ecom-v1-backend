@@ -38,6 +38,6 @@ router.put("/:id/restore", requireAuth, restoreProductHandler);
 
 // Admin File Upload Routes
 router.post("/upload-image", requireAuth, upload.single("image"), uploadImageHandler);
-router.post("/upload-images", requireAuth, upload.array("images", 5), uploadImagesHandler);
+router.post("/upload-images", requireAuth, upload.array("images", 7), uploadImagesHandler);
 
 export default router;

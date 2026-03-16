@@ -15,7 +15,7 @@ export async function uploadImageHandler(req: Request, res: Response) {
   }
 }
 
-// Multiple image upload (up to 5) — returns [{ url, publicId }, ...]
+// Multiple image upload (up to 7) — returns [{ url, publicId }, ...]
 export async function uploadImagesHandler(req: Request, res: Response) {
   try {
     if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {

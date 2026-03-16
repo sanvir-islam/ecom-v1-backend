@@ -17,7 +17,7 @@ const variantSchema = z.object({
   images: z
     .array(variantImageSchema)
     .min(1, { message: "Each variant must have at least 1 image" })
-    .max(5, { message: "Each variant can have a maximum of 5 images" }),
+    .max(7, { message: "Each variant can have a maximum of 7 images" }),
   stock: z.number().int().nonnegative().default(0),
   stockStatus: stockStatusEnum.default("UPCOMING"),
   badge: z.string().optional(),
