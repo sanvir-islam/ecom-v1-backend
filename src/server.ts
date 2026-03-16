@@ -52,7 +52,7 @@ const corsOptions: cors.CorsOptions = {
   credentials: true,
 };
 // Explicit OPTIONS preflight handling (fixes multipart/file upload CORS issues)
-app.options("*", cors(corsOptions));
+app.options(/.*/, cors(corsOptions));
 app.use(cors(corsOptions));
 app.use("/api/payments", paymentRoutes);
 
