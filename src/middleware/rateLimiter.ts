@@ -12,7 +12,6 @@ export interface CustomRequest extends Request {
 
 export const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Practical limit for production
 
   // 2. Safely cast the request to your CustomRequest
   keyGenerator: (req: Request) => {
@@ -26,10 +25,10 @@ export const globalLimiter = rateLimit({
     return customReq.ip || "unknown-ip";
   },
 
-  skip: (req: Request) => {
+  // Admins get a much higher limit but are not exempt — protects against compromised accounts
+  max: (req: Request) => {
     const customReq = req as CustomRequest;
-    // Bypass entirely if the user is an admin
-    return customReq.user?.role === "ADMIN";
+    return customReq.user?.role === "ADMIN" ? 5000 : 1000;
   },
 
   message: {

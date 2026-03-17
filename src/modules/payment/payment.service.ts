@@ -95,6 +95,9 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
         }
 
         // Fraud check: expected = product subtotal + shipping - discount (matches what Stripe charges)
+        if (session.amount_total == null) {
+          throw new Error(`Missing amount_total in Stripe session for order ${orderId}`);
+        }
         const expectedCents = Math.round((order.totalAmount + order.shippingCost - (order.discountAmount ?? 0)) * 100);
         if (session.amount_total !== expectedCents) {
           throw new Error(
