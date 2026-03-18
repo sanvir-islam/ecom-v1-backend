@@ -108,6 +108,33 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
           );
         }
 
+        // Stock check BEFORE committing — prevent oversell
+        for (const item of order.items) {
+          const product = await Product.findOne(
+            { _id: item.productId, "variants._id": item.variantId },
+            null,
+            { session: dbSession },
+          );
+          const variant = product?.variants.find((v) => v._id?.toString() === item.variantId.toString());
+          if (!variant || variant.stock < item.quantity) {
+            await dbSession.abortTransaction();
+            dbSession.endSession();
+            // Auto-refund the customer
+            if (session.payment_intent) {
+              await stripe.refunds.create({ payment_intent: session.payment_intent as string });
+              console.log(`💸 Auto-refunded order ${orderId} — ${item.name} (${item.sizeLabel}) out of stock`);
+            }
+            await Order.findByIdAndUpdate(orderId, { paymentStatus: "failed", orderStatus: "cancelled" });
+            await emailQueue.add("send-out-of-stock-refund", {
+              type: "ORDER_CONFIRMATION",
+              to: order.email,
+              subject: "We're sorry — your order has been refunded | The California Pickle",
+              html: `<p>Hi ${order.shippingAddress.firstName},</p><p>We're sorry — by the time your payment was processed, <strong>${item.name} (${item.sizeLabel})</strong> went out of stock. Your payment of <strong>$${(order.totalAmount + order.shippingCost).toFixed(2)}</strong> has been automatically refunded. Refunds typically appear within 5–10 business days. We apologize for the inconvenience.</p><p>— The California Pickle Team</p>`,
+            });
+            return { received: true };
+          }
+        }
+
         order.paymentStatus = "paid";
         order.orderStatus = "processing";
         order.stripePaymentIntentId = session.payment_intent as string;
@@ -122,17 +149,12 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
 
           if (updatedProduct) {
             const variant = updatedProduct.variants.find((v) => v._id?.toString() === item.variantId.toString());
-            if (variant) {
-              if (variant.stock < 0) {
-                console.log(`🚨 OVERSELL ALERT: ${updatedProduct.name} (${variant.sizeLabel}) stock: ${variant.stock}`);
-              }
-              if (variant.stock <= 0 && variant.stockStatus !== "OUT_OF_STOCK") {
-                await Product.updateOne(
-                  { _id: item.productId, "variants._id": item.variantId },
-                  { $set: { "variants.$.stockStatus": "OUT_OF_STOCK" } },
-                  { session: dbSession },
-                );
-              }
+            if (variant && variant.stock <= 0 && variant.stockStatus !== "OUT_OF_STOCK") {
+              await Product.updateOne(
+                { _id: item.productId, "variants._id": item.variantId },
+                { $set: { "variants.$.stockStatus": "OUT_OF_STOCK" } },
+                { session: dbSession },
+              );
             }
           }
         }

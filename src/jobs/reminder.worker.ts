@@ -2,6 +2,7 @@ import { Worker, Job } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import { emailQueue } from "../config/queue.js";
 import { Order } from "../modules/order/order.model.js";
+import { Product } from "../modules/product/product.model.js";
 import { getAbandonedCartTemplate } from "../templates/abandoned-cart.template.js";
 
 interface ReminderJobData {
@@ -27,6 +28,16 @@ export const reminderWorker = new Worker<ReminderJobData>(
     if (!order.checkoutUrl) {
       console.warn(`⚠️ No checkout URL stored for order ${orderId} — cannot send abandoned cart email.`);
       return;
+    }
+
+    // Stock check — don't send reminder if items are now out of stock
+    for (const item of order.items) {
+      const product = await Product.findOne({ _id: item.productId, "variants._id": item.variantId });
+      const variant = product?.variants.find((v) => v._id?.toString() === item.variantId.toString());
+      if (!variant || variant.stock < item.quantity) {
+        console.log(`⚠️ Reminder skipped for order ${orderId} — ${item.name} (${item.sizeLabel}) out of stock`);
+        return;
+      }
     }
 
     const html = getAbandonedCartTemplate(firstName, order.items, order.totalAmount, order.checkoutUrl);
