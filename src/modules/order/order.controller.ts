@@ -140,6 +140,15 @@ export async function sendManualReminderHandler(req: Request, res: Response) {
       return res.status(400).json({ message: "Order is already paid — no reminder needed" });
     }
 
+    // Stock check — don't send reminder for items that are now out of stock
+    for (const item of order.items) {
+      const product = await Product.findOne({ _id: item.productId, "variants._id": item.variantId });
+      const variant = product?.variants.find((v) => v._id?.toString() === item.variantId.toString());
+      if (!variant || variant.stock < item.quantity) {
+        return res.status(400).json({ message: `Cannot send reminder — ${item.name} (${item.sizeLabel}) is out of stock` });
+      }
+    }
+
     const resumeUrl = `${env.API_URL}/api/order/${order._id}/resume`;
     const html = getAbandonedCartTemplate(
       order.shippingAddress.firstName,
