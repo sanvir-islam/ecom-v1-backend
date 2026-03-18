@@ -94,11 +94,14 @@ export async function handleStripeWebhook(signature: string, rawBody: Buffer) {
           return { received: true };
         }
 
-        // Fraud check: expected = product subtotal + shipping - discount (matches what Stripe charges)
+        // Fraud check: expected = what Stripe actually charges
+        // order.totalAmount is already (productsSubtotal - discount), so:
+        // Stripe amount_total = order.totalAmount + shippingCost
+        // (Stripe line items are full-price + shipping, then coupon applied for discountAmount)
         if (session.amount_total == null) {
           throw new Error(`Missing amount_total in Stripe session for order ${orderId}`);
         }
-        const expectedCents = Math.round((order.totalAmount + order.shippingCost - (order.discountAmount ?? 0)) * 100);
+        const expectedCents = Math.round((order.totalAmount + order.shippingCost) * 100);
         if (session.amount_total !== expectedCents) {
           throw new Error(
             `Payment amount mismatch for order ${orderId}: expected ${expectedCents} cents, got ${session.amount_total} cents`,

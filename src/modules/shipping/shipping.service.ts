@@ -31,6 +31,20 @@ export async function handleShippoWebhook(payload: any) {
     return;
   }
 
+  // Only advance status — never go backwards, and only from paid orders
+  // Allow processing → shipped OR delivered (in case TRANSIT event is missed by Shippo)
+  // Allow shipped → delivered
+  const WEBHOOK_VALID_FROM: Record<string, string[]> = {
+    processing: ["shipped", "delivered"],
+    shipped: ["delivered"],
+  };
+
+  const allowed = WEBHOOK_VALID_FROM[order.orderStatus] ?? [];
+  if (!allowed.includes(orderStatus)) {
+    console.log(`ℹ️ Shippo webhook: ignoring ${order.orderStatus} → ${orderStatus} for order ${order._id}`);
+    return;
+  }
+
   await Order.findByIdAndUpdate(order._id, { orderStatus });
   console.log(`📦 Order ${order._id} auto-updated to "${orderStatus}" via Shippo webhook`);
 }
