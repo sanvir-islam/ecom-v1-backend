@@ -42,7 +42,7 @@ export const reminderWorker = new Worker<ReminderJobData>(
     }
 
     const resumeUrl = `${env.API_URL}/api/order/${orderId}/resume`;
-    const html = getAbandonedCartTemplate(firstName, order.items, order.totalAmount, resumeUrl, order.shippingCost ?? 0, order.discountAmount ?? 0);
+    const html = getAbandonedCartTemplate(firstName, order.items, order.totalAmount, resumeUrl, order.shippingCost ?? 0);
 
     await emailQueue.add("send-abandoned-cart", {
       type: "ABANDONED_CART",

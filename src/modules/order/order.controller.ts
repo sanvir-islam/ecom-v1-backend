@@ -12,7 +12,7 @@ import { env } from "../../config/env.js";
 
 export async function createOrderHandler(req: Request, res: Response) {
   try {
-    // Only the frontend proxy is allowed to create orders (prevents direct API discount manipulation)
+    // Only the frontend proxy is allowed to create orders
     const proxySecret = process.env.PROXY_SECRET;
     if (proxySecret && req.headers["x-proxy-secret"] !== proxySecret) {
       return res.status(403).json({ message: "Direct order creation is not allowed" });
@@ -86,8 +86,6 @@ export async function getOrderBySessionHandler(req: Request, res: Response) {
       items: order.items,
       totalAmount: order.totalAmount,
       shippingCost: order.shippingCost,
-      discountAmount: order.discountAmount ?? 0,
-      discountCode: order.discountCode ?? null,
       paymentStatus: order.paymentStatus,
       orderStatus: order.orderStatus,
       customerFirstName: order.shippingAddress.firstName,
@@ -147,7 +145,6 @@ export async function sendManualReminderHandler(req: Request, res: Response) {
       order.totalAmount,
       resumeUrl,
       order.shippingCost ?? 0,
-      order.discountAmount ?? 0,
     );
 
     await emailQueue.add("send-manual-reminder", {

@@ -4,7 +4,6 @@ export const getAbandonedCartTemplate = (
   total: number,
   resumeUrl: string,
   shippingCost: number = 0,
-  discountAmount: number = 0,
 ) => {
   const currentYear = new Date().getFullYear();
   const headerGreen = "#8CE000";
@@ -91,11 +90,6 @@ You got close — your order is still sitting there waiting on you. Your cart is
   </table>
 
   <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
-    ${discountAmount > 0 ? `
-    <tr>
-      <td style="padding: 6px 0; font-size: 13px; color: #6b7280;">Discount</td>
-      <td align="right" style="padding: 6px 0; font-size: 13px; color: #16a34a; font-weight: 700;">-$${discountAmount.toFixed(2)}</td>
-    </tr>` : ""}
     ${shippingCost > 0 ? `
     <tr>
       <td style="padding: 6px 0; font-size: 13px; color: #6b7280;">Shipping</td>

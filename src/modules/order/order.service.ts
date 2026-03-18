@@ -56,20 +56,11 @@ export async function createPendingOrder(data: CreateOrderDTO) {
     calculatedTotal += variant.price * item.quantity;
   }
 
-  const discountPercent = data.discountPercent ?? 0;
-  // discountAmount is always <= calculatedTotal because discountPercent is capped at 100 by schema
-  const discountAmount = discountPercent > 0
-    ? Math.round(calculatedTotal * discountPercent) / 100
-    : 0;
-  const finalTotal = calculatedTotal - discountAmount;
-
   const rawOrderData = {
     email: data.email,
     shippingAddress: data.shippingAddress,
     items: processedItems,
-    totalAmount: finalTotal,
-    discountCode: data.couponCode ?? null,
-    discountAmount: discountAmount,
+    totalAmount: calculatedTotal,
     shippingCost: data.shippingCost,
     shippoRateId: data.shippoRateId,
     paymentStatus: "pending",
