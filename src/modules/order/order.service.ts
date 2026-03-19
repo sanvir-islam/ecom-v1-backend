@@ -151,17 +151,12 @@ export async function getOrdersByEmail(email: string) {
   return await Order.find({ email: email.toLowerCase().trim(), paymentStatus: "paid" }).sort({ createdAt: -1 });
 }
 
-// Aggregated customer list — groups paid orders by email, returns summary per customer
-export async function getAggregatedCustomers(months?: number) {
-  const matchStage: any = { paymentStatus: "paid" };
-  if (months && months > 0) {
-    const since = new Date();
-    since.setMonth(since.getMonth() - months);
-    matchStage.createdAt = { $gte: since };
-  }
+// Aggregated customer list — groups paid orders by email, returns paginated summary
+export async function getAggregatedCustomers(page: number = 1, limit: number = 25) {
+  const skip = (page - 1) * limit;
 
-  return await Order.aggregate([
-    { $match: matchStage },
+  const result = await Order.aggregate([
+    { $match: { paymentStatus: "paid" } },
     { $sort: { createdAt: -1 } },
     {
       $group: {
@@ -177,7 +172,21 @@ export async function getAggregatedCustomers(months?: number) {
       },
     },
     { $sort: { totalSpent: -1 } },
+    {
+      $facet: {
+        data: [{ $skip: skip }, { $limit: limit }],
+        meta: [{ $count: "total" }],
+      },
+    },
   ]);
+
+  const data = result[0]?.data ?? [];
+  const total = result[0]?.meta[0]?.total ?? 0;
+
+  return {
+    data,
+    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+  };
 }
 
 // Returns all unpaid orders (pending + failed) — used for admin call list

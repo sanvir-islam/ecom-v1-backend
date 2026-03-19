@@ -131,9 +131,10 @@ export async function getUnpaidOrdersHandler(req: Request, res: Response) {
 
 export async function getCustomersHandler(req: Request, res: Response) {
   try {
-    const months = parseInt(req.query.months as string) || 0;
-    const customers = await OrderService.getAggregatedCustomers(months || undefined);
-    return res.status(200).json(customers);
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 25;
+    const result = await OrderService.getAggregatedCustomers(page, limit);
+    return res.status(200).json(result);
   } catch (error) {
     console.error("Get Customers Error:", error);
     return res.status(500).json({ message: "Failed to fetch customers" });
